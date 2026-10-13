@@ -1,4 +1,4 @@
-# Crestron CEN-GWEXER — 0.1.1 experimental capture build
+# Crestron CEN-GWEXER — 0.1.2 experimental Cove control build
 
 Independent Home Assistant integration, domain `crestron_gwexer`. It does not modify or import the iPad or DM integrations. Gateway hardware compatibility has not yet been tested.
 
@@ -6,7 +6,7 @@ Independent Home Assistant integration, domain `crestron_gwexer`. It does not mo
 
 Copy `custom_components/crestron_gwexer` into `/config/custom_components/`, restart Home Assistant, then add **Crestron CEN-GWEXER** under Settings → Devices & services. For HACS, add `https://github.com/hubertpi/crestron-cen-bridge` as a custom repository with category **Integration**, download it, restart Home Assistant, and add **Crestron CEN-GWEXER**. This is the initial experimental source release; gateway hardware compatibility remains unverified.
 
-Enter the processor IPv4 address and CIP destination port, the allowed gateway IPv4 address, and HA's listener address and port during setup. All five settings remain editable through Configure. Editable defaults for this installation: AV3 address `172.26.219.35`, gateway address `172.26.219.38`, listener bind address `0.0.0.0`, processor port `41794`, and HA listener port `41796`. HA is at `172.26.219.10`. The observed gateway IP ID is `1A`; retain that ID when changing its destination. The gateway address is a source IP filter, not a destination for outbound connections.
+Enter the processor IPv4 address and CIP destination port, the allowed gateway IPv4 address, and HA's listener address and port during setup. All five settings remain editable through Configure. The setup form provides editable installation defaults. The gateway address is a source IP filter, not a destination for outbound connections.
 
 Port **41796 is a proposed dedicated HA listener**, not a verified gateway setting. Confirm it is free and reachable. Before changing the gateway configuration, record its existing IP table and check its console help for custom destination-port syntax. Preserve the existing IP ID. Intended topology: gateway → HA listener → processor. If the gateway cannot select a different destination port, or the processor initiates the session, this topology needs adjustment before use. Nothing here changes the gateway configuration automatically.
 
@@ -18,10 +18,20 @@ Diagnostics include direction, UTC timestamp, session number, exact TCP read byt
 
 The connectivity entity only confirms both TCP sockets opened. Byte counts and session counts help distinguish an empty action from a session that never traversed HA. Counts measure received bytes, not delivery acknowledgment.
 
-The proxy permits one gateway session per entry, rejects other source IPs, forwards unchanged bytes, applies backpressure, and closes both sides when either side ends. The gateway must reconnect after interruption. There is no standalone emulation, generated keepalive, command injection, replay, or inferred light entity. If HA goes offline while the gateway points to HA, the proxied control path is unavailable; restoring the original IP table restores the original route.
+The proxy permits one gateway session per entry, rejects other source IPs, forwards unchanged bytes, applies backpressure, and closes both sides when either side ends. The gateway must reconnect after interruption. There is no standalone emulation or generated keepalive. The Cove light supports only the two captured on/off commands described below. If HA goes offline while the gateway points to HA, the proxied control path is unavailable; restoring the original IP table restores the original route.
 
 ## Validation
 
 Install test dependencies with `python -m pip install -r requirements-test.txt`, then run `python -m unittest discover -s tests -v`. Tests exercise actual loopback TCP relay traffic and lifecycle, raw capture limits, and split frame reconstruction. Hardware commissioning and a full Home Assistant runtime test are still required.
 
 Decoder adapted from `hubertpi/crestron-cip-bridge` v0.1.25, commit `3a626d64ba0d463f3821fdcf9c56f45ccdf3b014`.
+
+## Cove control (0.1.2)
+
+Adds the on/off-only `Cove` light (normally `light.crestron_cen_gwexer_cove`). The attached LEDs must not be dimmed; no brightness control is exposed. This is a site-specific captured mapping, not automatic discovery for arbitrary gateways.
+
+Commands reproduce the exact AV3-to-gateway frames observed during scene activation and go only to the gateway-facing socket. Commands are serialized at complete frame boundaries, recorded as `ha_to_gateway`, and never replayed automatically after reconnect. The relay continues forwarding ordinary traffic.
+
+State uses the exact nested 0x14 digital feedback that correlated with Cove in both scene and local-switch recordings. Other digital reports and the local-only level packet are not interpreted as state. State starts unknown, clears on disconnect, and changes only on matching gateway feedback; sending a command does not optimistically change it. After an update, operate the local switch or scene once if no initial feedback arrives.
+
+For physical validation: start capture, turn Cove on from HA, confirm the lights and HA state, turn it off, then stop capture and export diagnostics. Command replay has passed loopback routing tests but still requires this hardware test. The observed proxy forwarding and feedback correlations have been captured on the real gateway.

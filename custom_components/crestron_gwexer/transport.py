@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from time import monotonic
 
 from .decoder import decode_cip_updates
+from .cove import COVE_ON, COVE_OFF, cove_feedback
 
 
 def now():
@@ -93,6 +94,11 @@ class GatewayRelay:
         self.busy = False
         self.stopping = False
         self.connected = False
+        self.cove_is_on = None
+        self.cove_feedback_at = None
+        self._gateway_writer = None
+        self._gateway_write_lock = asyncio.Lock()
+        self._frame_boundary = asyncio.Event()
         self.sessions = 0
         self.rejected = 0
         self.last_error = None
@@ -129,6 +135,10 @@ class GatewayRelay:
             remote, upstream = await asyncio.wait_for(asyncio.open_connection(self.host, self.port), 10)
             self.sessions += 1
             self.connected = True
+            self._gateway_writer = writer
+            self._frame_boundary.clear()
+            self.cove_is_on = None
+            self.cove_feedback_at = None
             self.last_error = None
             self.notify()
             pumps = [asyncio.create_task(self._pump(reader, upstream, "gateway_to_av3")),
@@ -148,6 +158,10 @@ class GatewayRelay:
             await asyncio.gather(*(s.wait_closed() for s in (writer, upstream) if s), return_exceptions=True)
             if accepted:
                 self.connected = self.busy = False
+                self._gateway_writer = None
+                self._frame_boundary.clear()
+                self.cove_is_on = None
+                self.cove_feedback_at = None
             self.tasks.discard(task)
             self.notify()
 
@@ -156,18 +170,59 @@ class GatewayRelay:
         while data := await reader.read(8192):
             self.received_bytes[direction] += len(data)
             self.last_activity = now()
-            # Relay the unchanged bytes before optional inspection.
-            writer.write(data)
-            await writer.drain()
-            try:
+            # Serialize downstream writes so replay never splits a relayed frame.
+            if direction == "av3_to_gateway":
+                async with self._gateway_write_lock:
+                    writer.write(data)
+                    await writer.drain()
+                    frames = parser.feed(data)
+                    if parser.pending:
+                        self._frame_boundary.clear()
+                    else:
+                        self._frame_boundary.set()
+            else:
+                writer.write(data)
+                await writer.drain()
                 frames = parser.feed(data)
+            try:
+                if direction == "gateway_to_av3":
+                    for frame in frames:
+                        value = cove_feedback(frame)
+                        if value is not None:
+                            changed = self.cove_is_on != value
+                            self.cove_is_on = value
+                            self.cove_feedback_at = now()
+                            if changed:
+                                self.notify()
                 self.capture.record(direction, self.sessions, data, frames)
             except Exception:
                 # Observation must never terminate an otherwise healthy relay.
                 self.last_error = "capture_decode_error"
 
+    async def set_cove(self, on):
+        """Replay only the two captured commands, to the current gateway socket."""
+        writer = self._gateway_writer
+        session = self.sessions
+        if not self.connected or writer is None or writer.is_closing():
+            raise RuntimeError("Gateway is disconnected")
+        frame = COVE_ON if on else COVE_OFF
+        async with asyncio.timeout(3):
+            while True:
+                await self._frame_boundary.wait()
+                async with self._gateway_write_lock:
+                    if (writer is not self._gateway_writer or session != self.sessions
+                            or not self.connected or writer.is_closing()):
+                        raise RuntimeError("Gateway session changed; command was not replayed")
+                    if not self._frame_boundary.is_set():
+                        continue
+                    writer.write(frame)
+                    await writer.drain()
+                    self.capture.record("ha_to_gateway", session, frame, [frame])
+                    return
+
     def snapshot(self):
         return {"connected": self.connected, "sessions": self.sessions,
                 "rejected_connections": self.rejected, "last_error": self.last_error,
                 "last_activity": self.last_activity, "received_bytes": dict(self.received_bytes),
+                "cove": {"is_on": self.cove_is_on, "feedback_at": self.cove_feedback_at},
                 "capture": self.capture.snapshot()}

@@ -6,7 +6,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from .transport import GatewayRelay
 
 DOMAIN = "crestron_gwexer"
-PLATFORMS = [Platform.BINARY_SENSOR, Platform.BUTTON]
+PLATFORMS = [Platform.BINARY_SENSOR, Platform.BUTTON, Platform.LIGHT]
 
 
 async def async_setup_entry(hass, entry):
