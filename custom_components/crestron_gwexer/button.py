@@ -16,6 +16,7 @@ class CaptureButton(GatewayEntity, ButtonEntity):
     def __init__(self, entry, key, name):
         super().__init__(entry, key, name)
         self.action = key
+        self._attr_icon = "mdi:record-rec" if key == "start" else "mdi:stop-circle-outline"
 
     async def async_press(self):
         getattr(self.relay.capture, self.action)()

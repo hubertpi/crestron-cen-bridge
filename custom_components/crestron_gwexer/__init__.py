@@ -1,4 +1,4 @@
-"""Independent CEN-GWEXER capture integration."""
+"""Crestron CEN-GWEXER proxy, Cove control, and diagnostics."""
 from homeassistant.const import Platform
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.dispatcher import async_dispatcher_send

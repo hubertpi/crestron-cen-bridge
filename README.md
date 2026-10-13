@@ -1,37 +1,94 @@
-# Crestron CEN-GWEXER — 0.1.2 experimental Cove control build
+# Crestron CEN-GWEXER
 
-Independent Home Assistant integration, domain `crestron_gwexer`. It does not modify or import the iPad or DM integrations. Gateway hardware compatibility has not yet been tested.
+Home Assistant integration for a Crestron CEN-GWEXER wireless gateway connected to an AV3 processor. Provides Cove light on/off control with gateway state feedback, plus traffic recording for diagnostics.
 
-## Installation
+The gateway connects through Home Assistant to the AV3. Existing Crestron control continues through this proxy. This is a separate integration from the Crestron iPad and DM integrations.
 
-Copy `custom_components/crestron_gwexer` into `/config/custom_components/`, restart Home Assistant, then add **Crestron CEN-GWEXER** under Settings → Devices & services. For HACS, add `https://github.com/hubertpi/crestron-cen-bridge` as a custom repository with category **Integration**, download it, restart Home Assistant, and add **Crestron CEN-GWEXER**. This is the initial experimental source release; gateway hardware compatibility remains unverified.
+## Install with HACS
 
-Enter the processor IPv4 address and CIP destination port, the allowed gateway IPv4 address, and HA's listener address and port during setup. All five settings remain editable through Configure. The setup form provides editable installation defaults. The gateway address is a source IP filter, not a destination for outbound connections.
+1. In HACS, open **Custom repositories**, add `https://github.com/hubertpi/crestron-cen-bridge`, and select **Integration**.
+2. Download the latest numbered release and restart Home Assistant.
+3. Go to **Settings → Devices & services → Add integration → Crestron CEN-GWEXER**.
+4. Review the connection settings below. Configure the gateway route only after the listener is running.
 
-Port **41796 is a proposed dedicated HA listener**, not a verified gateway setting. Confirm it is free and reachable. Before changing the gateway configuration, record its existing IP table and check its console help for custom destination-port syntax. Preserve the existing IP ID. Intended topology: gateway → HA listener → processor. If the gateway cannot select a different destination port, or the processor initiates the session, this topology needs adjustment before use. Nothing here changes the gateway configuration automatically.
+For an existing installation, update in HACS and restart Home Assistant. Keep the existing integration entry; no gateway changes are needed. If HACS still shows a commit-based installation, use **Update information → Redownload** and select the numbered release.
 
-## Capture
+For manual installation, copy `custom_components/crestron_gwexer` from the release ZIP into `/config/custom_components/`, then restart and add the integration.
 
-Press **Start capture**, operate one device, press **Stop capture**, then download the integration diagnostics. To record registration, start capture before the gateway connects. A recording lasts at most five minutes, 4000 TCP read events, or 2 MB of raw payload. Starting replaces the previous recording; reload/restart loses it. Raw recordings may contain authentication or private display data; inspect before sharing publicly.
+## Connection settings
 
-Diagnostics include direction, UTC timestamp, session number, exact TCP read bytes, and best-effort candidate CIP frames and joins. TCP read boundaries are not packet/frame boundaries. Candidate frames can span reads; decoded joins are hypotheses inherited from the iPad decoder, not verified gateway controls. Unknown or encrypted bytes remain available in raw capture. TLS is not decrypted.
+All addresses and ports are editable during setup and through **Configure** afterward.
 
-The connectivity entity only confirms both TCP sockets opened. Byte counts and session counts help distinguish an empty action from a session that never traversed HA. Counts measure received bytes, not delivery acknowledgment.
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| AV3 IPv4 address | `172.26.219.35` | Processor destination |
+| AV3 CIP port | `41794` | Processor destination port |
+| HA listener bind address | `0.0.0.0` | Listen on all HA interfaces |
+| Dedicated HA listener port | `41796` | Gateway connects to this port |
+| Allowed gateway IPv4 address | `172.26.219.38` | Accept connections only from this gateway |
 
-The proxy permits one gateway session per entry, rejects other source IPs, forwards unchanged bytes, applies backpressure, and closes both sides when either side ends. The gateway must reconnect after interruption. There is no standalone emulation or generated keepalive. The Cove light supports only the two captured on/off commands described below. If HA goes offline while the gateway points to HA, the proxied control path is unavailable; restoring the original IP table restores the original route.
+The commissioned HA address is `172.26.219.10`. Use that reachable address in the gateway IP table, not `0.0.0.0`. Reserve a different listener port for each proxy integration. Saving settings reloads the proxy and disconnects its current session.
 
-## Validation
+### Gateway routing
 
-Install test dependencies with `python -m pip install -r requirements-test.txt`, then run `python -m unittest discover -s tests -v`. Tests exercise actual loopback TCP relay traffic and lifecycle, raw capture limits, and split frame reconstruction. Hardware commissioning and a full Home Assistant runtime test are still required.
+The commissioned route uses IP ID `1A`: **CEN-GWEXER → HA:41796 → AV3:41794**. Save the original `IPTABLE` output before changing another installation.
 
-Decoder adapted from `hubertpi/crestron-cip-bridge` v0.1.25, commit `3a626d64ba0d463f3821fdcf9c56f45ccdf3b014`.
+This gateway console uses raw TCP port `41795`. From Ubuntu:
 
-## Cove control (0.1.2)
+```sh
+nc -C 172.26.219.38 41795 | tr '\r' '\n'
+```
 
-Adds the on/off-only `Cove` light (normally `light.crestron_cen_gwexer_cove`). The attached LEDs must not be dimmed; no brightness control is exposed. This is a site-specific captured mapping, not automatic discovery for arbitrary gateways.
+The following commands were used on this gateway:
 
-Commands reproduce the exact AV3-to-gateway frames observed during scene activation and go only to the gateway-facing socket. Commands are serialized at complete frame boundaries, recorded as `ha_to_gateway`, and never replayed automatically after reconnect. The relay continues forwarding ordinary traffic.
+```text
+ADDMASTER 1A 172.26.219.10 41796
+IPTABLE
+REMMASTER 1A 172.26.219.35
+IPTABLE
+```
 
-State uses the exact nested 0x14 digital feedback that correlated with Cove in both scene and local-switch recordings. Other digital reports and the local-only level packet are not interpreted as state. State starts unknown, clears on disconnect, and changes only on matching gateway feedback; sending a command does not optimistically change it. After an update, operate the local switch or scene once if no initial feedback arrives.
+Verify the HA entry has port `41796` before removing the direct AV3 entry. On this firmware, `ADDMASTER` printed an error even when the entry was stored, and its help showed a misleading extra `device_id` argument. Treat the resulting `IPTABLE` as authoritative; other firmware may differ. Reboot the gateway if needed to apply the stored route.
 
-For physical validation: start capture, turn Cove on from HA, confirm the lights and HA state, turn it off, then stop capture and export diagnostics. Command replay has passed loopback routing tests but still requires this hardware test. The observed proxy forwarding and feedback correlations have been captured on the real gateway.
+To restore the original direct route for this installation:
+
+```text
+ADDMASTER 1A 172.26.219.35 41794
+IPTABLE
+REMMASTER 1A 172.26.219.10
+IPTABLE
+```
+
+Verify the original destination was restored before removing the HA route. While routed through HA, this control path depends on HA and the integration running.
+
+## Entities and behavior
+
+- **Cove:** on/off light, normally `light.crestron_cen_gwexer_cove`. No brightness control is exposed because the installed LEDs are not dimmable.
+- **Proxy TCP connection:** diagnostic connectivity indicator. It confirms both TCP connections, not application-level registration.
+- **Start capture / Stop capture:** diagnostic recording controls.
+
+Cove commands and feedback are specific to the commissioned installation; this integration does not automatically discover arbitrary wireless switches. HA control and feedback were physically confirmed working. Scene-driven feedback can take a few seconds to arrive.
+
+State follows gateway feedback, not an optimistic assumption after sending a command. It starts unknown until feedback arrives and becomes unavailable on disconnect. Operate Cove once if no initial feedback arrives after restart. Commands are sent only to the current gateway session, at complete CIP frame boundaries, and are not retried after reconnect.
+
+## Record diagnostics
+
+1. Press **Start capture**.
+2. Operate the device being investigated, leaving a few seconds between actions.
+3. Press **Stop capture**.
+4. Download diagnostics from the integration entry and save the JSON.
+
+Recordings stop at five minutes, 4,000 read events, or 2 MB. Starting a new recording replaces the previous one; reloading or restarting clears it. Recordings contain raw traffic and may include private data, so review before sharing publicly.
+
+Only traffic traversing this gateway proxy is captured. Other AV3 connections, such as a separate lighting controller, are outside its scope. Diagnostics contain timestamps, directions, session counters, raw bytes, and best-effort frame decoding. Unknown traffic is retained; encrypted traffic is not decrypted. Byte counters measure received bytes, not acknowledged delivery.
+
+## Development
+
+```sh
+python -m pip install -r requirements-test.txt
+python -m unittest discover -s tests -v
+```
+
+Tests cover relay lifecycle, capture bounds, frame reconstruction, Cove command routing and feedback, and configuration form serialization. Setup and entity loading have also been verified with Home Assistant 2026.10.0. Bundled branding displays on Home Assistant 2026.3 or newer.
+
+The best-effort legacy decoder was adapted from `hubertpi/crestron-cip-bridge` v0.1.25. Raw bytes remain authoritative for unmapped traffic.
