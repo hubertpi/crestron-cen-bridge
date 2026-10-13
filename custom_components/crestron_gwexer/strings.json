@@ -15,7 +15,8 @@
       }
     },
     "error": {
-      "listener_conflict": "Another gateway entry uses this listener port."
+      "listener_conflict": "Another gateway entry uses this listener port.",
+      "invalid_ip": "Enter a valid IPv4 address."
     }
   },
   "options": {
@@ -33,7 +34,8 @@
       }
     },
     "error": {
-      "listener_conflict": "Another gateway entry uses this listener port."
+      "listener_conflict": "Another gateway entry uses this listener port.",
+      "invalid_ip": "Enter a valid IPv4 address."
     }
   }
 }

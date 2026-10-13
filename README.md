@@ -1,4 +1,4 @@
-# Crestron CEN-GWEXER — 0.1.0 experimental capture build
+# Crestron CEN-GWEXER — 0.1.1 experimental capture build
 
 Independent Home Assistant integration, domain `crestron_gwexer`. It does not modify or import the iPad or DM integrations. Gateway hardware compatibility has not yet been tested.
 
@@ -22,6 +22,6 @@ The proxy permits one gateway session per entry, rejects other source IPs, forwa
 
 ## Validation
 
-Run `python -m unittest discover -s tests -v`. Tests exercise actual loopback TCP relay traffic and lifecycle, raw capture limits, and split frame reconstruction. Hardware commissioning and a full Home Assistant runtime test are still required.
+Install test dependencies with `python -m pip install -r requirements-test.txt`, then run `python -m unittest discover -s tests -v`. Tests exercise actual loopback TCP relay traffic and lifecycle, raw capture limits, and split frame reconstruction. Hardware commissioning and a full Home Assistant runtime test are still required.
 
 Decoder adapted from `hubertpi/crestron-cip-bridge` v0.1.25, commit `3a626d64ba0d463f3821fdcf9c56f45ccdf3b014`.

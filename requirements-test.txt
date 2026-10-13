@@ -1,0 +1,2 @@
+voluptuous==0.15.2
+voluptuous-serialize==2.7.0
